@@ -1,0 +1,18 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Upload and Detect";
+}
+
+<h1>Upload an image</h1>
+
+<form method="post" enctype="multipart/form-data">
+    <input type="file" name="ImageFile" />
+    <button type="submit">Detect</button>
+</form>
+
+@if (Model.DetectedImagePath != null)
+{
+    <h2>Detected Image:</h2>
+    <img src="@Model.DetectedImagePath" alt="Detected Image" style="max-width:100%; height:auto;"/>
+}
