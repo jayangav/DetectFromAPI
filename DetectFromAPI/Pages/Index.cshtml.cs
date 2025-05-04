@@ -13,11 +13,13 @@ public class IndexModel : PageModel
 {
     private readonly IHttpClientFactory _clientFactory;
     private readonly IWebHostEnvironment _env;
+    private readonly IConfiguration _config;
 
-    public IndexModel(IHttpClientFactory clientFactory, IWebHostEnvironment env)
+    public IndexModel(IHttpClientFactory clientFactory, IWebHostEnvironment env, IConfiguration config)
     {
         _clientFactory = clientFactory;
         _env = env;
+        _config = config;
     }
 
     [BindProperty]
@@ -30,7 +32,6 @@ public class IndexModel : PageModel
         if (ImageFile == null || ImageFile.Length == 0)
             return Page();
 
-        // Save uploaded image temporarily
         var uploadPath = Path.Combine(_env.WebRootPath, "uploads");
         Directory.CreateDirectory(uploadPath);
         var filePath = Path.Combine(uploadPath, ImageFile.FileName);
@@ -40,14 +41,17 @@ public class IndexModel : PageModel
             await ImageFile.CopyToAsync(stream);
         }
 
-        // Send to FastAPI server
         var client = _clientFactory.CreateClient();
         var content = new MultipartFormDataContent();
         var fileContent = new StreamContent(System.IO.File.OpenRead(filePath));
         fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
         content.Add(fileContent, "file", ImageFile.FileName);
 
-        var response = await client.PostAsync("http://localhost:8000/detect", content);
+        var apiUrl = _config["FastApiSettings:ApiUrl"];
+        var apiKey = _config["FastApiSettings:ApiKey"];
+        client.DefaultRequestHeaders.Add("x-api-key", apiKey);
+
+        var response = await client.PostAsync(apiUrl, content);
         if (!response.IsSuccessStatusCode)
         {
             System.Diagnostics.Debug.WriteLine($"API call failed. StatusCode: {response.StatusCode}");
@@ -56,29 +60,14 @@ public class IndexModel : PageModel
 
         var jsonString = await response.Content.ReadAsStringAsync();
 
-        // Debug: log raw JSON
-        System.Diagnostics.Debug.WriteLine("Received JSON:");
-        System.Diagnostics.Debug.WriteLine(jsonString);
-
-        // Deserialize
         var detectionResponse = JsonSerializer.Deserialize<DetectionResponse>(jsonString);
-
-        // More debug info
-        System.Diagnostics.Debug.WriteLine($"detectionResponse is null: {detectionResponse == null}");
-        if (detectionResponse != null)
-        {
-            System.Diagnostics.Debug.WriteLine($"detectionResponse.Detections is null: {detectionResponse.Detections == null}");
-            System.Diagnostics.Debug.WriteLine($"detectionResponse.Detections.Count: {detectionResponse.Detections?.Count}");
-        }
 
         if (detectionResponse?.Detections == null || detectionResponse.Detections.Count == 0)
         {
-            System.Diagnostics.Debug.WriteLine("No detections found.");
             DetectedImagePath = "/uploads/" + ImageFile.FileName;
             return Page();
         }
 
-        // Draw detections
         var outputImagePath = Path.Combine("uploads", "detected_" + ImageFile.FileName);
         var outputImageFullPath = Path.Combine(_env.WebRootPath, outputImagePath);
 
@@ -112,10 +101,6 @@ public class IndexModel : PageModel
         return Page();
     }
 }
-
-// =============================
-//  Extra: DetectionResponse.cs
-// =============================
 
 public class DetectionResponse
 {
