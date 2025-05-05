@@ -25,6 +25,17 @@ public class IndexModel : PageModel
     [BindProperty]
     public IFormFile ImageFile { get; set; }
 
+    [BindProperty]
+    public string SelectedFeature { get; set; }
+
+    [BindProperty]
+    public string Question { get; set; }
+
+    public string Answer { get; set; }
+
+    public Dictionary<string, string> FormFields { get; set; } = new();
+
+
     public string DetectedImagePath { get; set; }
 
     public async Task<IActionResult> OnPostAsync()
@@ -44,12 +55,32 @@ public class IndexModel : PageModel
         var client = _clientFactory.CreateClient();
         var content = new MultipartFormDataContent();
         var fileContent = new StreamContent(System.IO.File.OpenRead(filePath));
-        fileContent.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+        fileContent.Headers.ContentType = new MediaTypeHeaderValue(ImageFile.ContentType);
         content.Add(fileContent, "file", ImageFile.FileName);
 
-        var apiUrl = _config["FastApiSettings:ApiUrl"];
         var apiKey = _config["FastApiSettings:ApiKey"];
+        client.DefaultRequestHeaders.Clear();
         client.DefaultRequestHeaders.Add("x-api-key", apiKey);
+
+        string apiUrl;
+
+        if (SelectedFeature == "signature")
+        {
+            apiUrl = _config["FastApiSettings:SignatureApiUrl"];
+        }
+        else if (SelectedFeature == "form")
+        {
+            apiUrl = _config["FastApiSettings:FormApiUrl"];
+        }
+        else if (SelectedFeature == "qa")
+        {
+            apiUrl = _config["FastApiSettings:QaApiUrl"];
+            content.Add(new StringContent(Question ?? ""), "question");
+        }
+        else
+        {
+            return Page();
+        }
 
         var response = await client.PostAsync(apiUrl, content);
         if (!response.IsSuccessStatusCode)
@@ -60,47 +91,70 @@ public class IndexModel : PageModel
 
         var jsonString = await response.Content.ReadAsStringAsync();
 
-        var detectionResponse = JsonSerializer.Deserialize<DetectionResponse>(jsonString);
-
-        if (detectionResponse?.Detections == null || detectionResponse.Detections.Count == 0)
+        if (SelectedFeature == "signature")
         {
-            DetectedImagePath = "/uploads/" + ImageFile.FileName;
-            return Page();
-        }
-
-        var outputImagePath = Path.Combine("uploads", "detected_" + ImageFile.FileName);
-        var outputImageFullPath = Path.Combine(_env.WebRootPath, outputImagePath);
-
-        using (var image = await Image.LoadAsync<Rgb24>(filePath))
-        {
-            foreach (var detection in detectionResponse.Detections)
+            var detectionResponse = JsonSerializer.Deserialize<DetectionResponse>(jsonString);
+            if (detectionResponse?.Detections == null || detectionResponse.Detections.Count == 0)
             {
-                var box = detection.Box;
-                image.Mutate(ctx =>
+                DetectedImagePath = "/uploads/" + ImageFile.FileName;
+                return Page();
+            }
+
+            var outputImagePath = Path.Combine("uploads", "detected_" + ImageFile.FileName);
+            var outputImageFullPath = Path.Combine(_env.WebRootPath, outputImagePath);
+
+            using (var image = await Image.LoadAsync<Rgb24>(filePath))
+            {
+                foreach (var detection in detectionResponse.Detections)
                 {
-                    ctx.DrawPolygon(SixLabors.ImageSharp.Color.Red, 3, new PointF[]
+                    var box = detection.Box;
+                    image.Mutate(ctx =>
                     {
+                        ctx.DrawPolygon(SixLabors.ImageSharp.Color.Red, 3, new PointF[]
+                        {
                         new PointF(box[0], box[1]),
                         new PointF(box[2], box[1]),
                         new PointF(box[2], box[3]),
                         new PointF(box[0], box[3])
-                    });
+                        });
 
-                    ctx.DrawText($"{detection.Class} ({detection.Confidence:P1})",
-                        SystemFonts.CreateFont("Arial", 16),
-                        SixLabors.ImageSharp.Color.Blue,
-                        new PointF(box[0], Math.Max(0, box[1] - 20)));
-                });
+                        ctx.DrawText($"{detection.Class} ({detection.Confidence:P1})",
+                            SystemFonts.CreateFont("Arial", 16),
+                            SixLabors.ImageSharp.Color.Blue,
+                            new PointF(box[0], Math.Max(0, box[1] - 20)));
+                    });
+                }
+
+                await image.SaveAsync(outputImageFullPath);
             }
 
-            await image.SaveAsync(outputImageFullPath);
+            DetectedImagePath = "/" + outputImagePath.Replace("\\", "/");
         }
-
-        DetectedImagePath = "/" + outputImagePath.Replace("\\", "/");
+        else if (SelectedFeature == "form")
+        {
+            var fields = JsonSerializer.Deserialize<Dictionary<string, string>>(jsonString);
+            if (fields != null)
+            {
+                FormFields = fields;
+            }
+        }
+        else if (SelectedFeature == "qa")
+        {
+            var responseObj = JsonSerializer.Deserialize<QaResponse>(jsonString);
+            Answer = responseObj?.Answer;
+        }
 
         return Page();
     }
+
 }
+
+public class QaResponse
+{
+    [JsonPropertyName("answer")]
+    public string Answer { get; set; }
+}
+
 
 public class DetectionResponse
 {

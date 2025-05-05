@@ -1,18 +1,86 @@
 ﻿@page
 @model IndexModel
 @{
-    ViewData["Title"] = "Object Detection";
+    ViewData["Title"] = "AI Document Processor";
 }
 
-<h2>Upload Image for Detection</h2>
+<h2>AI Document Processor</h2>
 
 <form method="post" enctype="multipart/form-data">
-    <input type="file" name="ImageFile" />
-    <button type="submit">Upload</button>
+    <div>
+        <label>Select Functionality:</label><br />
+        <select asp-for="SelectedFeature" class="form-select">
+            <option value="signature">Signature Detection</option>
+            <option value="form">Form Recognition</option>
+            <option value="qa">Question Answering</option>
+        </select>
+    </div>
+
+    <div>
+        <label asp-for="ImageFile">Upload Image or PDF:</label><br />
+        <input asp-for="ImageFile" type="file" class="form-control" />
+    </div>
+
+    <div id="qa-section" style="display:none;">
+        <label asp-for="Question">Enter Your Question:</label><br />
+        <input asp-for="Question" class="form-control" />
+    </div>
+
+    <br />
+    <button type="submit" class="btn btn-primary">Submit</button>
 </form>
+
+<hr />
 
 @if (Model.DetectedImagePath != null)
 {
-    <h3>Detection Result:</h3>
-    <img src="@Model.DetectedImagePath" style="max-width: 100%; border: 1px solid #ccc;" />
+    <div>
+        <h3>Detection Result Image</h3>
+        <img src="@Model.DetectedImagePath" alt="Detection Result" style="max-width: 100%; border: 1px solid #ccc;" />
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.Answer))
+{
+    <div>
+        <h3>Answer</h3>
+        <div class="alert alert-info">@Model.Answer</div>
+    </div>
+}
+
+@if (Model.FormFields?.Count > 0)
+{
+    <div>
+        <h3>Extracted Form Fields</h3>
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Field</th>
+                    <th>Value</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var field in Model.FormFields)
+                {
+                    <tr>
+                        <td>@field.Key</td>
+                        <td>@field.Value</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@section Scripts {
+    <script>
+        function toggleQASection() {
+            var feature = document.querySelector('[name="SelectedFeature"]').value;
+            var qa = document.getElementById('qa-section');
+            qa.style.display = feature === 'qa' ? 'block' : 'none';
+        }
+
+        document.addEventListener("DOMContentLoaded", toggleQASection);
+        document.querySelector('[name="SelectedFeature"]').addEventListener('change', toggleQASection);
+    </script>
 }
